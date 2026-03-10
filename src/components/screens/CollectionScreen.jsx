@@ -7,7 +7,7 @@ import { ACHIEVEMENTS } from "../../data/achievements";
 import { ELEMENT_SYNERGIES, ELEMENT_ICONS, getActiveSynergies } from "../../data/elements";
 import { playEvolveSound } from "../../utils/sound";
 
-export default function CollectionScreen({ state, dispatch, level, levelXP, elementCounts, synergyEffects, masteryBonuses }) {
+export default function CollectionScreen({ state, dispatch, level, levelXP, xpForNext, elementCounts, synergyEffects, masteryBonuses }) {
   const available = getAvailableAnimals(level);
 
   const collectionDisplay = useMemo(() => {
@@ -28,9 +28,12 @@ export default function CollectionScreen({ state, dispatch, level, levelXP, elem
     dispatch({ type: "EVOLVE", animalId });
   };
 
-  const canPrestige = level >= 20 && (() => {
-    const nonSeasonal = ANIMALS.filter(a => !a.season && (a.rarity === "COMMON" || a.rarity === "RARE"));
-    return nonSeasonal.every(a => state.collection.some(c => c.id === a.id));
+  const canPrestige = level >= 30 && (() => {
+    const required = ANIMALS.filter(a => !a.season && (a.rarity === "COMMON" || a.rarity === "RARE" || a.rarity === "EPIC"));
+    const allCollected = required.every(a => state.collection.some(c => c.id === a.id));
+    const hasLegendary = state.stats.legendaryFound >= 1;
+    const enoughHatches = state.stats.totalHatches >= 100;
+    return allCollected && hasLegendary && enoughHatches;
   })();
 
   const unlockedAchs = ACHIEVEMENTS.filter(a => state.achievements.includes(a.id));
@@ -72,7 +75,7 @@ export default function CollectionScreen({ state, dispatch, level, levelXP, elem
         </div>
 
         <div style={{ background: "rgba(255,255,255,0.07)", borderRadius: 999, height: 6, marginBottom: "1.5rem", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${(levelXP / 200) * 100}%`, background: "linear-gradient(90deg, #ffaa00, #ffdd44)", borderRadius: 999, transition: "width 0.5s ease" }} />
+          <div style={{ height: "100%", width: `${xpForNext > 0 ? (levelXP / xpForNext) * 100 : 0}%`, background: "linear-gradient(90deg, #ffaa00, #ffdd44)", borderRadius: 999, transition: "width 0.5s ease" }} />
         </div>
 
         {/* Element Synergy Section */}

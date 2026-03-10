@@ -8,6 +8,17 @@ import { getElementCounts, getSynergyEffects } from "../data/elements";
 import { generateQuests, getWeekKey } from "../data/quests";
 import { MASTERY_TIERS, getMasteryTier, getMasteryBonuses } from "../data/mastery";
 
+// Scaling XP: level n requires 200 + (n-1)*50 XP
+function getLevelFromXP(totalXP) {
+  let level = 1, xpNeeded = 200, remaining = totalXP;
+  while (remaining >= xpNeeded) {
+    remaining -= xpNeeded;
+    level++;
+    xpNeeded = 200 + (level - 1) * 50;
+  }
+  return { level, currentLevelXP: remaining, xpForNext: xpNeeded };
+}
+
 function checkDailyStreak(state) {
   const today = new Date().toDateString();
   if (state.lastPlayDate === today) return state;
@@ -62,7 +73,8 @@ function checkAchievements(state) {
 }
 
 function getPrestigeMultiplier(count) {
-  return 1 + count * 0.25;
+  const cappedCount = Math.min(count, 5);
+  return 1 + cappedCount * 0.25;
 }
 
 function getShopEffects(shopPurchases) {
@@ -379,11 +391,19 @@ function reducer(state, action) {
     }
 
     case "PRESTIGE": {
-      const level = Math.floor(state.totalXP / 200) + 1;
-      if (level < 20) return state;
-      const nonSeasonal = ANIMALS.filter(a => !a.season && (a.rarity === "COMMON" || a.rarity === "RARE"));
-      const allCollected = nonSeasonal.every(a => state.collection.some(c => c.id === a.id));
+      const { level } = getLevelFromXP(state.totalXP);
+      if (level < 30) return state;
+
+      // Require all COMMON + RARE + EPIC collected
+      const required = ANIMALS.filter(a => !a.season && (a.rarity === "COMMON" || a.rarity === "RARE" || a.rarity === "EPIC"));
+      const allCollected = required.every(a => state.collection.some(c => c.id === a.id));
       if (!allCollected) return state;
+
+      // Require at least 1 LEGENDARY found
+      if (state.stats.legendaryFound < 1) return state;
+
+      // Require at least 100 total hatches
+      if (state.stats.totalHatches < 100) return state;
 
       let prestigeState = {
         ...state,
@@ -491,8 +511,7 @@ export function useGameState() {
     dispatch({ type: "INIT_QUESTS" });
   }, []);
 
-  const level = Math.floor(state.totalXP / 200) + 1;
-  const levelXP = state.totalXP % 200;
+  const { level, currentLevelXP: levelXP, xpForNext } = getLevelFromXP(state.totalXP);
   const shopEffects = getShopEffects(state.shopPurchases);
   const prestigeMultiplier = getPrestigeMultiplier(state.prestigeCount);
 
@@ -506,6 +525,7 @@ export function useGameState() {
     dispatch,
     level,
     levelXP,
+    xpForNext,
     shopEffects,
     prestigeMultiplier,
     elementCounts,

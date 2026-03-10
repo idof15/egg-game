@@ -77,12 +77,12 @@ export const ACHIEVEMENTS = [
     check: (stats) => stats.dailyStreak >= 7,
   },
   {
-    id: "clicks_1000",
+    id: "clicks_5000",
     name: "Tap Master",
-    desc: "Click 1000 times total",
+    desc: "Click 5,000 times total",
     icon: "👆",
     reward: { coins: 300 },
-    check: (stats) => stats.totalClicks >= 1000,
+    check: (stats) => stats.totalClicks >= 5000,
   },
   // ── Hatching milestones ──
   {
@@ -109,6 +109,14 @@ export const ACHIEVEMENTS = [
     reward: { coins: 1000, gems: 10 },
     check: (stats) => stats.totalHatches >= 250,
   },
+  {
+    id: "hatch_500",
+    name: "Egg Immortal",
+    desc: "Hatch 500 eggs",
+    icon: "🌟",
+    reward: { coins: 2000, gems: 20 },
+    check: (stats) => stats.totalHatches >= 500,
+  },
   // ── Collection goals ──
   {
     id: "collect_all_rare",
@@ -130,6 +138,17 @@ export const ACHIEVEMENTS = [
     check: (stats, state) => {
       const epics = ANIMALS.filter(a => a.rarity === "EPIC" && !a.season);
       return epics.every(a => state.collection.some(c => c.id === a.id));
+    },
+  },
+  {
+    id: "collect_all_legendary",
+    name: "Legend Collector",
+    desc: "Collect all Legendary creatures",
+    icon: "📕",
+    reward: { coins: 1000, gems: 15 },
+    check: (stats, state) => {
+      const legendaries = ANIMALS.filter(a => a.rarity === "LEGENDARY" && !a.season);
+      return legendaries.every(a => state.collection.some(c => c.id === a.id));
     },
   },
   {
@@ -203,20 +222,20 @@ export const ACHIEVEMENTS = [
     check: (stats) => (stats.perfectMiniGames || 0) >= 5,
   },
   {
-    id: "clicks_5000",
+    id: "clicks_25000",
     name: "Tap Warrior",
-    desc: "Click 5,000 times total",
+    desc: "Click 25,000 times total",
     icon: "✊",
     reward: { coins: 500, gems: 3 },
-    check: (stats) => stats.totalClicks >= 5000,
+    check: (stats) => stats.totalClicks >= 25000,
   },
   {
-    id: "clicks_25000",
+    id: "clicks_100000",
     name: "Tap God",
-    desc: "Click 25,000 times total",
+    desc: "Click 100,000 times total",
     icon: "🦾",
     reward: { coins: 1000, gems: 10 },
-    check: (stats) => stats.totalClicks >= 25000,
+    check: (stats) => stats.totalClicks >= 100000,
   },
   // ── Progression ──
   {

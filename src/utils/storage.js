@@ -1,5 +1,5 @@
 const STORAGE_KEY = "egg_game_save";
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 const DEFAULT_STATE = {
   version: CURRENT_VERSION,
@@ -59,6 +59,11 @@ function migrate(data) {
     data.recentHatches = data.recentHatches || [];
     data.activeBuffs = data.activeBuffs || [];
     data.version = 3;
+  }
+  if (data.version < 4) {
+    // v3 -> v4: rebalance update — animal data comes from files, no stored data changes needed
+    data.stats = { ...DEFAULT_STATE.stats, ...data.stats };
+    data.version = 4;
   }
   return data;
 }

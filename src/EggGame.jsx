@@ -11,7 +11,7 @@ import "./styles/animations.css";
 
 export default function EggGame() {
   const {
-    state, dispatch, level, levelXP, shopEffects, prestigeMultiplier,
+    state, dispatch, level, levelXP, xpForNext, shopEffects, prestigeMultiplier,
     elementCounts, synergyEffects, buffEffects, masteryBonuses,
   } = useGameState();
   const [toasts, setToasts] = useState([]);
@@ -112,7 +112,7 @@ export default function EggGame() {
       )}
       {state.screen === "hatch" && (
         <HatchScreen
-          state={state} dispatch={dispatch} level={level} levelXP={levelXP}
+          state={state} dispatch={dispatch} level={level} levelXP={levelXP} xpForNext={xpForNext}
           shopEffects={shopEffects} synergyEffects={synergyEffects} buffEffects={buffEffects}
         />
       )}
@@ -121,7 +121,7 @@ export default function EggGame() {
       )}
       {state.screen === "collection" && (
         <CollectionScreen
-          state={state} dispatch={dispatch} level={level} levelXP={levelXP}
+          state={state} dispatch={dispatch} level={level} levelXP={levelXP} xpForNext={xpForNext}
           elementCounts={elementCounts} synergyEffects={synergyEffects} masteryBonuses={masteryBonuses}
         />
       )}

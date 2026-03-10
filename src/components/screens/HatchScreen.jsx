@@ -6,15 +6,17 @@ import { useParticles } from "../../hooks/useParticles";
 import { shouldSpawnHazard, pickHazard } from "../../data/hazards";
 import { playTapSound, playComboSound, playHatchSound, playAutoTapSound, playHazardSound, playHazardSuccessSound } from "../../utils/sound";
 
-export default function HatchScreen({ state, dispatch, level, levelXP, shopEffects, synergyEffects, buffEffects }) {
+export default function HatchScreen({ state, dispatch, level, levelXP, xpForNext, shopEffects, synergyEffects, buffEffects }) {
   const animal = state.currentAnimal;
   const eggType = state.selectedEggType;
 
   // Apply time warp buff and earth synergy click reduction
   const baseMaxClicks = animal?.clicks || 20;
+  const levelScaling = 1 + 0.02 * Math.max(0, level - 1);
+  const scaledClicks = Math.ceil(baseMaxClicks * levelScaling);
   const earthReduction = (animal?.element === "earth" && synergyEffects?.earthClickReduction) ? synergyEffects.earthClickReduction : 0;
   const buffClickReduction = buffEffects?.clickReduction || 0;
-  const maxClicks = Math.max(3, Math.floor((baseMaxClicks - earthReduction) * (1 - buffClickReduction)));
+  const maxClicks = Math.max(3, Math.floor((scaledClicks - earthReduction) * (1 - buffClickReduction)));
 
   const [clicks, setClicks] = useState(0);
   const [wobble, setWobble] = useState(0);
@@ -39,6 +41,17 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
   const [hazardResult, setHazardResult] = useState(null); // "success" | "fail" | null
   const lastHazardCrack = useRef(-1);
 
+  // Tremor state: track alternating L/R taps
+  const [tremorLastSide, setTremorLastSide] = useState(null);
+
+  // Auto-clicker energy system
+  const [autoEnergy, setAutoEnergy] = useState(100);
+  const [autoEnergyPaused, setAutoEnergyPaused] = useState(false);
+  const autoEnergyRef = useRef(autoEnergy);
+  const autoEnergyPausedRef = useRef(autoEnergyPaused);
+  autoEnergyRef.current = autoEnergy;
+  autoEnergyPausedRef.current = autoEnergyPaused;
+
   // Refs for values needed in auto-clicker
   const clicksRef = useRef(clicks);
   const comboRef = useRef(combo);
@@ -57,28 +70,45 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
   // Combo timer extension from air synergy
   const comboTimeout = 2000 + (synergyEffects?.comboTimerBonus || 0);
 
-  // Check for hazard spawn at crack levels 2 and 4
+  // Auto-clicker energy recharge
+  const autoRate = shopEffects.autoClickRate + (synergyEffects?.autoClickBonus || 0);
+  useEffect(() => {
+    if (autoRate <= 0) return;
+    const interval = setInterval(() => {
+      setAutoEnergy(prev => {
+        const isIdle = hatchingRef.current || autoEnergyPausedRef.current;
+        const rechargeRate = isIdle ? 2 : 0.5;
+        const next = Math.min(100, prev + rechargeRate);
+        if (autoEnergyPausedRef.current && next >= 20) {
+          setAutoEnergyPaused(false);
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [autoRate]);
+
+  // Check for hazard spawn at crack levels 1-4
   useEffect(() => {
     if (activeHazard || hatching) return;
-    if ((crackLevel === 2 || crackLevel === 4) && lastHazardCrack.current !== crackLevel) {
+    if (crackLevel >= 1 && crackLevel <= 4 && lastHazardCrack.current !== crackLevel) {
       lastHazardCrack.current = crackLevel;
       if (shouldSpawnHazard(crackLevel)) {
         const hazard = pickHazard(animal?.element);
         setActiveHazard(hazard);
         setHazardTaps(0);
         setHazardResult(null);
+        setTremorLastSide(null);
         if (state.settings.soundEnabled) playHazardSound();
 
         if (hazard.id === "freeze") {
-          // Must tap 8 times in 2s
           const timer = setTimeout(() => {
             setHazardResult("fail");
             setClicks(c => Math.max(0, c - hazard.penalty));
             setTimeout(() => { setActiveHazard(null); setHazardResult(null); }, 1000);
           }, hazard.timeLimit);
           setHazardTimer(timer);
-        } else if (hazard.id === "overheat") {
-          // Must stop clicking for 1.5s
+        } else if (hazard.id === "overheat" || hazard.id === "void_pull") {
           const timer = setTimeout(() => {
             setHazardResult("success");
             if (state.settings.soundEnabled) playHazardSuccessSound();
@@ -86,7 +116,13 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
           }, hazard.cooldownTime);
           setHazardTimer(timer);
         } else if (hazard.id === "wobble") {
-          // Auto-resolves after timeLimit - player must tap at right moment
+          const timer = setTimeout(() => {
+            setHazardResult("fail");
+            setClicks(c => Math.max(0, c - hazard.penalty));
+            setTimeout(() => { setActiveHazard(null); setHazardResult(null); }, 1000);
+          }, hazard.timeLimit);
+          setHazardTimer(timer);
+        } else if (hazard.id === "tremor") {
           const timer = setTimeout(() => {
             setHazardResult("fail");
             setClicks(c => Math.max(0, c - hazard.penalty));
@@ -101,7 +137,7 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
   // Cleanup hazard timer
   useEffect(() => () => { if (hazardTimer) clearTimeout(hazardTimer); }, [hazardTimer]);
 
-  const handleHazardTap = useCallback(() => {
+  const handleHazardTap = useCallback((side) => {
     if (!activeHazard) return false;
 
     if (activeHazard.id === "freeze") {
@@ -134,8 +170,8 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
       return true;
     }
 
-    if (activeHazard.id === "overheat") {
-      // Clicking during overheat = fail
+    if (activeHazard.id === "overheat" || activeHazard.id === "void_pull") {
+      // Clicking during overheat/void_pull = fail
       clearTimeout(hazardTimer);
       setHazardResult("fail");
       setClicks(c => Math.max(0, c - activeHazard.penalty));
@@ -143,8 +179,25 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
       return true;
     }
 
+    if (activeHazard.id === "tremor") {
+      // Must alternate L/R taps
+      if (side && side !== tremorLastSide) {
+        setTremorLastSide(side);
+        const newTaps = hazardTaps + 1;
+        setHazardTaps(newTaps);
+        if (newTaps >= activeHazard.targetTaps) {
+          clearTimeout(hazardTimer);
+          setHazardResult("success");
+          if (state.settings.soundEnabled) playHazardSuccessSound();
+          setTimeout(() => { setActiveHazard(null); setHazardResult(null); }, 800);
+        }
+      }
+      // If same side tapped, don't count but don't fail either
+      return true;
+    }
+
     return false;
-  }, [activeHazard, hazardTaps, hazardTimer, state.settings.soundEnabled]);
+  }, [activeHazard, hazardTaps, hazardTimer, state.settings.soundEnabled, tremorLastSide]);
 
   // Store hazard start time
   useEffect(() => {
@@ -162,6 +215,19 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
       return;
     }
     if (activeHazard) return; // Auto-clicker doesn't work during hazards
+
+    // Auto-clicker energy check
+    if (isAuto) {
+      if (autoEnergyPausedRef.current || autoEnergyRef.current < 1) {
+        setAutoEnergyPaused(true);
+        return;
+      }
+      setAutoEnergy(prev => {
+        const next = prev - 1;
+        if (next <= 0) setAutoEnergyPaused(true);
+        return Math.max(0, next);
+      });
+    }
 
     const clickValue = 1 + shopEffects.clickBonus + (synergyEffects?.clickDmgBoost ? Math.floor(shopEffects.clickBonus * synergyEffects.clickDmgBoost) : 0);
     const curClicks = clicksRef.current;
@@ -237,9 +303,8 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
     }
   }, [animal, maxClicks, dispatch, shopEffects, synergyEffects, state.settings, spawnParticles, spawnRipple, spawnFloatingText, activeHazard, handleHazardTap, isFragile, fragilityThreshold, fragility, imperfect, comboTimeout]);
 
-  // Auto-clicker (with synergy bonus)
+  // Auto-clicker (with synergy bonus and energy system)
   useEffect(() => {
-    const autoRate = shopEffects.autoClickRate + (synergyEffects?.autoClickBonus || 0);
     if (autoRate > 0 && !hatching) {
       const rate = 1000 / autoRate;
       const interval = setInterval(() => {
@@ -250,7 +315,7 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
       }, rate);
       return () => clearInterval(interval);
     }
-  }, [shopEffects.autoClickRate, synergyEffects?.autoClickBonus, hatching, doClick]);
+  }, [autoRate, hatching, doClick]);
 
   const handleClick = useCallback((e) => {
     if (hatching) return;
@@ -266,6 +331,8 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
     return { icon: icons[b.buffType] || "✨", charges: b.charges };
   });
 
+  const xpBarPercent = xpForNext > 0 ? (levelXP / xpForNext) * 100 : 0;
+
   return (
     <div
       ref={containerRef}
@@ -278,6 +345,18 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
           e.preventDefault();
           const rect = containerRef.current?.getBoundingClientRect();
           doClick(rect ? rect.width / 2 : 100, rect ? rect.height / 2 : 100, false);
+        }
+        // Tremor hazard: use A/D or ArrowLeft/ArrowRight
+        if (activeHazard?.id === "tremor" && !hazardResult) {
+          if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+            e.preventDefault();
+            e.stopPropagation();
+            handleHazardTap("left");
+          } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+            e.preventDefault();
+            e.stopPropagation();
+            handleHazardTap("right");
+          }
         }
       }}
       style={{
@@ -320,19 +399,32 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
         }} />
       ))}
 
-      {/* Auto-clicker indicator */}
-      {(shopEffects.autoClickRate > 0 || (synergyEffects?.autoClickBonus || 0) > 0) && (
+      {/* Auto-clicker indicator with energy bar */}
+      {autoRate > 0 && (
         <div style={{
           position: "absolute", top: "5%", right: "4%",
-          color: "rgba(100,200,100,0.6)", fontSize: "0.65rem",
-          letterSpacing: "0.1em",
-        }}>🤖 AUTO</div>
+          display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.2rem",
+        }}>
+          <div style={{
+            color: autoEnergyPaused ? "rgba(255,100,100,0.6)" : "rgba(100,200,100,0.6)",
+            fontSize: "0.65rem", letterSpacing: "0.1em",
+          }}>
+            🤖 {autoEnergyPaused ? "RECHARGING" : "AUTO"}
+          </div>
+          <div style={{ width: 50, background: "rgba(255,255,255,0.1)", borderRadius: 999, height: 4, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", width: `${autoEnergy}%`,
+              background: autoEnergyPaused ? "#ff6644" : autoEnergy < 30 ? "#ffaa00" : "#66cc66",
+              borderRadius: 999, transition: "width 0.3s ease",
+            }} />
+          </div>
+        </div>
       )}
 
       {/* Active buff icons */}
       {activeBuffIcons.length > 0 && (
         <div style={{
-          position: "absolute", top: "8%", right: "4%",
+          position: "absolute", top: autoRate > 0 ? "11%" : "8%", right: "4%",
           display: "flex", gap: "0.3rem",
         }}>
           {activeBuffIcons.map((b, i) => (
@@ -384,7 +476,7 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
           borderRadius: 16, padding: "0.6rem 1.2rem",
           textAlign: "center", zIndex: 80,
           animation: "fadeIn 0.3s ease",
-          pointerEvents: "none",
+          pointerEvents: activeHazard.id === "tremor" && !hazardResult ? "auto" : "none",
         }}>
           <div style={{ fontSize: "1.5rem", marginBottom: "0.2rem" }}>
             {hazardResult === "success" ? "✅" : hazardResult === "fail" ? "❌" : activeHazard.emoji}
@@ -396,6 +488,30 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.65rem", marginTop: "0.2rem" }}>
               {activeHazard.desc}
               {activeHazard.id === "freeze" && ` (${hazardTaps}/${activeHazard.targetTaps})`}
+              {activeHazard.id === "tremor" && ` (${hazardTaps}/${activeHazard.targetTaps})`}
+            </div>
+          )}
+          {/* Tremor L/R buttons for touch */}
+          {activeHazard.id === "tremor" && !hazardResult && (
+            <div style={{ display: "flex", gap: "1rem", justifyContent: "center", marginTop: "0.4rem" }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleHazardTap("left"); }}
+                style={{
+                  background: tremorLastSide === "left" ? "rgba(255,180,60,0.3)" : "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,180,60,0.4)", borderRadius: 8,
+                  color: "#fff", fontSize: "0.9rem", padding: "0.3rem 0.8rem",
+                  cursor: "pointer", fontFamily: "inherit", minHeight: 36, minWidth: 50,
+                  touchAction: "manipulation",
+                }}>◀ L</button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleHazardTap("right"); }}
+                style={{
+                  background: tremorLastSide === "right" ? "rgba(255,180,60,0.3)" : "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,180,60,0.4)", borderRadius: 8,
+                  color: "#fff", fontSize: "0.9rem", padding: "0.3rem 0.8rem",
+                  cursor: "pointer", fontFamily: "inherit", minHeight: 36, minWidth: 50,
+                  touchAction: "manipulation",
+                }}>R ▶</button>
             </div>
           )}
         </div>
@@ -483,7 +599,7 @@ export default function HatchScreen({ state, dispatch, level, levelXP, shopEffec
           LVL {level}
         </span>
         <div style={{ width: 60, background: "rgba(255,255,255,0.07)", borderRadius: 999, height: 4, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${(levelXP / 200) * 100}%`, background: "#ffaa44", borderRadius: 999 }} />
+          <div style={{ height: "100%", width: `${xpBarPercent}%`, background: "#ffaa44", borderRadius: 999 }} />
         </div>
         <span style={{ color: "#ffdd44", fontSize: "0.68rem" }}>🪙{state.coins}</span>
       </div>
